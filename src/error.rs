@@ -22,6 +22,15 @@ pub enum Error {
 
     #[error("upstream request failed: {0}")]
     Upstream(#[from] reqwest::Error),
+
+    #[error("failed to elevate privileges to write /etc/hosts")]
+    Elevate,
+
+    #[error("cannot bind {ip}: address is not assigned to an interface\n  add it with: {cmd}")]
+    BindUnavailable { ip: String, cmd: String },
+
+    #[error("cannot bind port {port}: privileged ports (below 1024) require root\n  run: sudo apiproxy serve")]
+    PrivilegedPort { port: u16 },
 }
 
 impl IntoResponse for Error {
@@ -30,7 +39,11 @@ impl IntoResponse for Error {
             Error::NotFound => StatusCode::NOT_FOUND,
             Error::ReadBody(_) => StatusCode::BAD_REQUEST,
             Error::Upstream(_) => StatusCode::BAD_GATEWAY,
-            Error::Io(_) | Error::Json(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::Io(_)
+            | Error::Json(_)
+            | Error::Elevate
+            | Error::BindUnavailable { .. }
+            | Error::PrivilegedPort { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         };
         (status, self.to_string()).into_response()
     }

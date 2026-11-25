@@ -11,7 +11,9 @@ use axum::{
 };
 use tokio::sync::RwLock;
 
+use crate::config::{self, Config};
 use crate::error::{Error, Result};
+use crate::hosts;
 use crate::routes::{load_all, Route};
 
 const MAX_BODY: usize = 64 * 1024 * 1024;
@@ -22,7 +24,10 @@ struct AppState {
     routes: Arc<RwLock<Vec<Route>>>,
 }
 
-pub async fn run(config: &str, port: u16) -> Result<()> {
+pub async fn run(config: &str) -> Result<()> {
+    let cfg = load_or_create_config()?;
+    hosts::apply(&cfg.hostname, &cfg.bind_ip)?;
+
     let routes = Arc::new(RwLock::new(load_all(config)));
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
@@ -34,11 +39,38 @@ pub async fn run(config: &str, port: u16) -> Result<()> {
         .fallback(proxy)
         .with_state(AppState { client, routes });
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    println!("serving on http://localhost:{port}");
+    let ip: std::net::IpAddr = cfg.bind_ip.parse().unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+    let addr = SocketAddr::from((ip, cfg.port));
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) if e.kind() == std::io::ErrorKind::AddrNotAvailable => {
+            let cmd = if cfg!(target_os = "macos") {
+                format!("sudo ifconfig lo0 alias {}", cfg.bind_ip)
+            } else {
+                format!("sudo ip addr add {} dev lo", cfg.bind_ip)
+            };
+            return Err(Error::BindUnavailable {
+                ip: cfg.bind_ip.clone(),
+                cmd,
+            });
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            return Err(Error::PrivilegedPort { port: cfg.port });
+        }
+        Err(e) => return Err(e.into()),
+    };
+    println!("serving on {}", cfg.origin());
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+fn load_or_create_config() -> Result<Config> {
+    if !std::path::Path::new(config::CONFIG_PATH).exists() {
+        let default = Config::default();
+        config::save(config::CONFIG_PATH, &default)?;
+        return Ok(default);
+    }
+    config::load(config::CONFIG_PATH)
 }
 
 async fn watch(config: String, routes: Arc<RwLock<Vec<Route>>>) {

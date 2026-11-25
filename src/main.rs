@@ -2,7 +2,9 @@ use clap::{Parser, Subcommand};
 
 use crate::error::Result;
 
+mod config;
 mod error;
+mod hosts;
 mod routes;
 mod serve;
 
@@ -23,15 +25,24 @@ enum Command {
     /// Remove a key
     Rm { key: String },
     /// List keys
-    Ls {
-        #[arg(long, default_value_t = 8080)]
-        port: u16,
-    },
+    Ls,
     /// Start the proxy
-    Serve {
-        #[arg(long, default_value_t = 8080)]
-        port: u16,
+    Serve,
+    /// Show or change config
+    Config {
+        #[command(subcommand)]
+        action: Option<ConfigAction>,
     },
+}
+
+#[derive(Subcommand)]
+enum ConfigAction {
+    /// Set the hostname (updates /etc/hosts)
+    Hostname { value: String },
+    /// Set the bind IP (updates /etc/hosts)
+    BindIp { value: String },
+    /// Set the port
+    Port { value: u16 },
 }
 
 #[tokio::main]
@@ -40,8 +51,14 @@ async fn main() -> Result<()> {
     match cli.command {
         Command::Add { url, key } => routes::add(&cli.config, &url, &key)?,
         Command::Rm { key } => routes::remove(&cli.config, &key)?,
-        Command::Ls { port } => routes::list(&cli.config, port)?,
-        Command::Serve { port } => serve::run(&cli.config, port).await?,
+        Command::Ls => routes::list(&cli.config)?,
+        Command::Serve => serve::run(&cli.config).await?,
+        Command::Config { action } => match action {
+            None => config::show()?,
+            Some(ConfigAction::Hostname { value }) => config::set_hostname(&value)?,
+            Some(ConfigAction::BindIp { value }) => config::set_bind_ip(&value)?,
+            Some(ConfigAction::Port { value }) => config::set_port(value)?,
+        },
     }
     Ok(())
 }

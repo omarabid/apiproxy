@@ -60,9 +60,10 @@ pub fn remove(path: &str, key: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn list(path: &str, port: u16) -> Result<()> {
+pub fn list(path: &str) -> Result<()> {
+    let cfg = crate::config::load(crate::config::CONFIG_PATH)?;
     for r in load_all(path) {
-        println!("http://localhost:{port}/{} -> {}", r.key, r.url);
+        println!("{}/{} -> {}", cfg.origin(), r.key, r.url);
     }
     Ok(())
 }
