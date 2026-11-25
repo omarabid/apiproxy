@@ -1,5 +1,8 @@
 use clap::{Parser, Subcommand};
 
+use crate::error::Result;
+
+mod error;
 mod routes;
 mod serve;
 
@@ -31,12 +34,14 @@ enum Command {
     },
 }
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Add { url, key } => routes::add(&cli.config, &url, &key),
-        Command::Rm { key } => routes::remove(&cli.config, &key),
-        Command::Ls { port } => routes::list(&cli.config, port),
-        Command::Serve { port } => serve::run(&cli.config, port),
+        Command::Add { url, key } => routes::add(&cli.config, &url, &key)?,
+        Command::Rm { key } => routes::remove(&cli.config, &key)?,
+        Command::Ls { port } => routes::list(&cli.config, port)?,
+        Command::Serve { port } => serve::run(&cli.config, port).await?,
     }
+    Ok(())
 }
