@@ -29,8 +29,8 @@ pub enum Error {
     #[error("cannot bind {ip}: address is not assigned to an interface\n  add it with: {cmd}")]
     BindUnavailable { ip: String, cmd: String },
 
-    #[error("cannot bind port {port}: privileged ports (below 1024) require root\n  run: sudo apiproxy serve")]
-    PrivilegedPort { port: u16 },
+    #[error("cannot bind port {port}: privileged ports (below 1024) require root\n  {cmd}")]
+    PrivilegedPort { port: u16, cmd: String },
 }
 
 impl IntoResponse for Error {

@@ -55,7 +55,17 @@ pub async fn run(config: &str) -> Result<()> {
             });
         }
         Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-            return Err(Error::PrivilegedPort { port: cfg.port });
+            let cmd = if cfg!(target_os = "linux") {
+                format!(
+                    "run: sudo setcap 'cap_net_bind_service=+ep' {}",
+                    std::env::current_exe()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|_| "/path/to/apiproxy".to_string())
+                )
+            } else {
+                "run: sudo apiproxy serve".to_string()
+            };
+            return Err(Error::PrivilegedPort { port: cfg.port, cmd });
         }
         Err(e) => return Err(e.into()),
     };
