@@ -13,17 +13,29 @@ const HOSTS_PATH: &str = "/etc/hosts";
 const MARK_START: &str = "# >>> apiproxy >>>";
 const MARK_END: &str = "# <<< apiproxy <<<";
 
-/// Removes the existing apiproxy block from `lines`, if present.
-fn strip_block(lines: &mut Vec<String>) {
-    let Some(start) = lines.iter().position(|l| l.trim() == MARK_START) else {
-        return;
-    };
-    let end = lines[start..]
-        .iter()
-        .position(|l| l.trim() == MARK_END)
-        .map(|i| i + start)
-        .unwrap_or(lines.len() - 1);
-    lines.drain(start..=end);
+/// The contents of `/etc/hosts`, as a line buffer.
+struct HostsFile(Vec<String>);
+
+impl HostsFile {
+    /// Removes the existing apiproxy block, if present.
+    fn strip_apiproxy_block(&mut self) {
+        let lines = &mut self.0;
+        let Some(start) = lines.iter().position(|l| l.trim() == MARK_START) else {
+            return;
+        };
+        let end = lines[start..]
+            .iter()
+            .position(|l| l.trim() == MARK_END)
+            .map_or(lines.len(), |i| start + i + 1);
+        lines.drain(start..end);
+    }
+
+    /// Appends a fresh apiproxy block mapping `hostname` to `bind_ip`.
+    fn push_block(&mut self, hostname: &str, bind_ip: &str) {
+        self.0.push(MARK_START.to_owned());
+        self.0.push(format!("{bind_ip} {hostname}"));
+        self.0.push(MARK_END.to_owned());
+    }
 }
 
 /// Writes `lines` to `/etc/hosts`, elevating on permission errors.
@@ -61,10 +73,8 @@ fn write_elevated(content: &str) -> Result<()> {
 /// Rewrites the apiproxy block to map `hostname` to `bind_ip`.
 pub fn apply(hostname: &str, bind_ip: &str) -> Result<()> {
     let content = fs::read_to_string(HOSTS_PATH)?;
-    let mut lines: Vec<String> = content.lines().map(str::to_owned).collect();
-    strip_block(&mut lines);
-    lines.push(MARK_START.to_owned());
-    lines.push(format!("{bind_ip} {hostname}"));
-    lines.push(MARK_END.to_owned());
-    write(&lines)
+    let mut hosts = HostsFile(content.lines().map(str::to_owned).collect());
+    hosts.strip_apiproxy_block();
+    hosts.push_block(hostname, bind_ip);
+    write(&hosts.0)
 }
