@@ -5,13 +5,12 @@ use crate::error::Result;
 mod config;
 mod error;
 mod hosts;
-mod routes;
 mod serve;
 
 #[derive(Parser)]
 #[command(name = "apiproxy", version, about = "Store HTTP endpoints and proxy them")]
 struct Cli {
-    #[arg(long, global = true, default_value = "apiproxy.jsonl")]
+    #[arg(long, global = true, default_value = "apiproxy.json")]
     config: String,
 
     #[command(subcommand)]
@@ -49,15 +48,15 @@ enum ConfigAction {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Add { url, key } => routes::add(&cli.config, &url, &key)?,
-        Command::Rm { key } => routes::remove(&cli.config, &key)?,
-        Command::Ls => routes::list(&cli.config)?,
+        Command::Add { url, key } => config::add(&cli.config, &url, &key)?,
+        Command::Rm { key } => config::remove(&cli.config, &key)?,
+        Command::Ls => config::list(&cli.config)?,
         Command::Serve => serve::run(&cli.config).await?,
         Command::Config { action } => match action {
-            None => config::show()?,
-            Some(ConfigAction::Hostname { value }) => config::set_hostname(&value)?,
-            Some(ConfigAction::BindIp { value }) => config::set_bind_ip(&value)?,
-            Some(ConfigAction::Port { value }) => config::set_port(value)?,
+            None => config::show(&cli.config)?,
+            Some(ConfigAction::Hostname { value }) => config::set_hostname(&cli.config, &value)?,
+            Some(ConfigAction::BindIp { value }) => config::set_bind_ip(&cli.config, &value)?,
+            Some(ConfigAction::Port { value }) => config::set_port(&cli.config, value)?,
         },
     }
     Ok(())

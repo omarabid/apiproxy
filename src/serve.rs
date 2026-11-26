@@ -11,10 +11,9 @@ use axum::{
 };
 use tokio::sync::RwLock;
 
-use crate::config::{self, Config};
+use crate::config::{self, Config, Route};
 use crate::error::{Error, Result};
 use crate::hosts;
-use crate::routes::{load_all, Route};
 
 const MAX_BODY: usize = 64 * 1024 * 1024;
 
@@ -24,16 +23,16 @@ struct AppState {
     routes: Arc<RwLock<Vec<Route>>>,
 }
 
-pub async fn run(config: &str) -> Result<()> {
-    let cfg = load_or_create_config()?;
+pub async fn run(path: &str) -> Result<()> {
+    let cfg = load_or_create_config(path)?;
     hosts::apply(&cfg.hostname, &cfg.bind_ip)?;
 
-    let routes = Arc::new(RwLock::new(load_all(config)));
+    let routes = Arc::new(RwLock::new(cfg.routes.clone()));
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
 
-    tokio::spawn(watch(config.to_owned(), routes.clone()));
+    tokio::spawn(watch(path.to_owned(), routes.clone()));
 
     let app = Router::new()
         .fallback(proxy)
@@ -74,24 +73,26 @@ pub async fn run(config: &str) -> Result<()> {
     Ok(())
 }
 
-fn load_or_create_config() -> Result<Config> {
-    if !std::path::Path::new(config::CONFIG_PATH).exists() {
+fn load_or_create_config(path: &str) -> Result<Config> {
+    if !std::path::Path::new(path).exists() {
         let default = Config::default();
-        config::save(config::CONFIG_PATH, &default)?;
+        config::save(path, &default)?;
         return Ok(default);
     }
-    config::load(config::CONFIG_PATH)
+    config::load(path)
 }
 
-async fn watch(config: String, routes: Arc<RwLock<Vec<Route>>>) {
+async fn watch(path: String, routes: Arc<RwLock<Vec<Route>>>) {
     let mut last = SystemTime::UNIX_EPOCH;
     loop {
         tokio::time::sleep(Duration::from_secs(1)).await;
-        if let Ok(modified) = std::fs::metadata(&config).and_then(|m| m.modified())
+        if let Ok(modified) = std::fs::metadata(&path).and_then(|m| m.modified())
             && modified != last
         {
             last = modified;
-            *routes.write().await = load_all(&config);
+            if let Ok(cfg) = config::load(&path) {
+                *routes.write().await = cfg.routes;
+            }
         }
     }
 }

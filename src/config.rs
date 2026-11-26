@@ -6,13 +6,19 @@ use serde::{Deserialize, Serialize};
 use crate::error::Result;
 use crate::hosts;
 
-pub const CONFIG_PATH: &str = "apiproxy.json";
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub hostname: String,
     pub bind_ip: String,
     pub port: u16,
+    #[serde(default)]
+    pub routes: Vec<Route>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Route {
+    pub key: String,
+    pub url: String,
 }
 
 impl Default for Config {
@@ -21,6 +27,7 @@ impl Default for Config {
             hostname: "myapi".to_owned(),
             bind_ip: "127.0.0.1".to_owned(),
             port: 80,
+            routes: Vec::new(),
         }
     }
 }
@@ -48,27 +55,61 @@ pub fn save(path: &str, config: &Config) -> Result<()> {
     Ok(())
 }
 
-pub fn show() -> Result<()> {
-    println!("{}", serde_json::to_string_pretty(&load(CONFIG_PATH)?)?);
+pub fn show(path: &str) -> Result<()> {
+    println!("{}", serde_json::to_string_pretty(&load(path)?)?);
     Ok(())
 }
 
-pub fn set_hostname(value: &str) -> Result<()> {
-    mutate(|c| c.hostname = value.to_owned())
+pub fn set_hostname(path: &str, value: &str) -> Result<()> {
+    mutate(path, |c| c.hostname = value.to_owned())
 }
 
-pub fn set_bind_ip(value: &str) -> Result<()> {
-    mutate(|c| c.bind_ip = value.to_owned())
+pub fn set_bind_ip(path: &str, value: &str) -> Result<()> {
+    mutate(path, |c| c.bind_ip = value.to_owned())
 }
 
-pub fn set_port(value: u16) -> Result<()> {
-    mutate(|c| c.port = value)
+pub fn set_port(path: &str, value: u16) -> Result<()> {
+    mutate(path, |c| c.port = value)
 }
 
-fn mutate(f: impl FnOnce(&mut Config)) -> Result<()> {
-    let mut cfg = load(CONFIG_PATH)?;
+fn mutate(path: &str, f: impl FnOnce(&mut Config)) -> Result<()> {
+    let mut cfg = load(path)?;
     f(&mut cfg);
-    save(CONFIG_PATH, &cfg)?;
+    save(path, &cfg)?;
     hosts::apply(&cfg.hostname, &cfg.bind_ip)?;
-    show()
+    show(path)
+}
+
+pub fn add(path: &str, url: &str, key: &str) -> Result<()> {
+    let mut cfg = load(path)?;
+    cfg.routes.retain(|r| r.key != key);
+    cfg.routes.push(Route {
+        key: key.to_owned(),
+        url: url.to_owned(),
+    });
+    save(path, &cfg)?;
+    println!("added {key} -> {url}");
+    Ok(())
+}
+
+pub fn remove(path: &str, key: &str) -> Result<()> {
+    let mut cfg = load(path)?;
+    let before = cfg.routes.len();
+    cfg.routes.retain(|r| r.key != key);
+    save(path, &cfg)?;
+    if cfg.routes.len() < before {
+        println!("removed {key}");
+    } else {
+        println!("no key {key}");
+    }
+    Ok(())
+}
+
+pub fn list(path: &str) -> Result<()> {
+    let cfg = load(path)?;
+    let origin = cfg.origin();
+    for r in &cfg.routes {
+        println!("{origin}/{} -> {}", r.key, r.url);
+    }
+    Ok(())
 }
