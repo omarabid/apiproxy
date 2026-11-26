@@ -1,6 +1,6 @@
 [package]
 name = "apiproxy"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "simple and local api endpoints proxy"
 license = "MIT"
