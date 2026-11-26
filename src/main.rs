@@ -1,3 +1,7 @@
+//! Command-line interface for [`apiproxy`](https://crates.io/crates/apiproxy).
+//!
+//! Parses the CLI and dispatches each subcommand to the appropriate module.
+
 use clap::{Parser, Subcommand};
 
 use crate::error::Result;

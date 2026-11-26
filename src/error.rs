@@ -1,11 +1,18 @@
+//! Error type shared across the crate.
+//!
+//! Each variant maps to an HTTP status code for the proxy handler; CLI
+//! callers print the human-readable message instead.
+
 use std::io;
 
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use thiserror::Error;
 
+/// Crate-wide result alias.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+/// All errors this crate can produce.
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("no route matches the requested path")]

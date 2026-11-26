@@ -1,3 +1,8 @@
+//! HTTP proxying.
+//!
+//! Serves the configured hostname/IP/port, watching the config file for
+//! route changes and forwarding requests to the longest-matching upstream.
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -15,14 +20,17 @@ use crate::config::{self, Config, Route};
 use crate::error::{Error, Result};
 use crate::hosts;
 
+/// Maximum proxied request body size, in bytes.
 const MAX_BODY: usize = 64 * 1024 * 1024;
 
+/// Shared state held by the [`proxy`] handler.
 #[derive(Clone)]
 struct AppState {
     client: reqwest::Client,
     routes: Arc<RwLock<Vec<Route>>>,
 }
 
+/// Starts the proxy: loads config, applies `/etc/hosts`, binds, and serves.
 pub async fn run(path: &str) -> Result<()> {
     let cfg = load_or_create_config(path)?;
     hosts::apply(&cfg.hostname, &cfg.bind_ip)?;
@@ -73,6 +81,7 @@ pub async fn run(path: &str) -> Result<()> {
     Ok(())
 }
 
+/// Loads the config at `path`, creating it with defaults if missing.
 fn load_or_create_config(path: &str) -> Result<Config> {
     if !std::path::Path::new(path).exists() {
         let default = Config::default();
@@ -82,6 +91,7 @@ fn load_or_create_config(path: &str) -> Result<Config> {
     config::load(path)
 }
 
+/// Polls `path` once per second, reloading routes when its mtime changes.
 async fn watch(path: String, routes: Arc<RwLock<Vec<Route>>>) {
     let mut last = SystemTime::UNIX_EPOCH;
     loop {
@@ -97,6 +107,7 @@ async fn watch(path: String, routes: Arc<RwLock<Vec<Route>>>) {
     }
 }
 
+/// Finds the route with the longest matching key prefix and the remainder.
 fn find_route<'a>(routes: &'a [Route], path: &str) -> Option<(&'a Route, String)> {
     let mut best: Option<(&Route, String, usize)> = None;
     for route in routes {
@@ -113,6 +124,7 @@ fn find_route<'a>(routes: &'a [Route], path: &str) -> Option<(&'a Route, String)
     best.map(|(route, remainder, _)| (route, remainder))
 }
 
+/// Builds the upstream URL: base + remainder + query string.
 fn build_target(url: &str, remainder: &str, query: Option<&str>) -> String {
     let mut target = url.trim_end_matches('/').to_owned();
     target.push_str(remainder);
@@ -123,6 +135,7 @@ fn build_target(url: &str, remainder: &str, query: Option<&str>) -> String {
     target
 }
 
+/// Drops hop-by-hop headers that must not be forwarded to upstream.
 fn strip_hop_by_hop(headers: &HeaderMap) -> HeaderMap {
     let mut out = HeaderMap::new();
     for (name, value) in headers {
@@ -137,6 +150,7 @@ fn strip_hop_by_hop(headers: &HeaderMap) -> HeaderMap {
     out
 }
 
+/// Reports whether `name` is a hop-by-hop header.
 fn is_hop_by_hop(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
@@ -151,6 +165,7 @@ fn is_hop_by_hop(name: &str) -> bool {
     )
 }
 
+/// Forwards one request to its matched upstream, streaming the response back.
 async fn proxy(State(state): State<AppState>, req: Request) -> Result<Response> {
     let method = req.method().clone();
     let path = req.uri().path().to_owned();
